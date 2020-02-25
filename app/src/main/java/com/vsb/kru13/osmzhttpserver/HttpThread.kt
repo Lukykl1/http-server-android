@@ -1,16 +1,26 @@
 package com.vsb.kru13.osmzhttpserver
 
+import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
 import android.util.Log
 import java.io.*
+import java.net.InetAddress
 import java.net.Socket
 import java.nio.file.Files
+import java.util.*
 import java.util.regex.Pattern
 
-class HttpThread(val socket: Socket) : Runnable {
 
+class HttpThread(val socket: Socket, val handler: Handler) : Runnable {
+    public companion object {
+        public const val LOG_KEY = "LOG"
+    }
+    private var address: InetAddress? = null
     public override fun run() {
         try {
+            this.address = socket.inetAddress
+            sendLogMessage("Client ${address} connected")
             val out = socket.getOutputStream()
             val bufferedReader = BufferedReader(InputStreamReader(socket.getInputStream()))
 
@@ -19,8 +29,10 @@ class HttpThread(val socket: Socket) : Runnable {
                 socket.close()
                 return
             }
+            sendLogMessage("Client ${address} Path ${path} requested")
             createResponseForPath(path, out)
             out.flush()
+            sendLogMessage("Client ${address} closed")
         } finally {
             socket.close()
         }
@@ -86,7 +98,17 @@ class HttpThread(val socket: Socket) : Runnable {
                 "</body>\n" +
                 "</html>"
         val response = createHeader(body.length.toLong(), 404) + body
+        sendLogMessage("To ${address.toString()}: Sended ${response.toByteArray().size} bytes")
         out.write(response.toByteArray())
+    }
+
+    private fun sendLogMessage(response: String) {
+        val currentTime: Date = Calendar.getInstance().time
+        val msg = handler.obtainMessage()
+        val bundle = Bundle()
+        bundle.putString(LOG_KEY, "$currentTime: $response")
+        msg.data = bundle
+        handler.sendMessage(msg)
     }
 
     private fun response404(out: OutputStream) {
@@ -96,6 +118,7 @@ class HttpThread(val socket: Socket) : Runnable {
                 "</body>\n" +
                 "</html>"
         val response = createHeader(body.length.toLong(), 404) + body
+        sendLogMessage("To ${address.toString()}: Sended ${response.toByteArray().size} bytes")
         out.write(response.toByteArray())
     }
 
@@ -110,12 +133,14 @@ class HttpThread(val socket: Socket) : Runnable {
     }
 
     private fun responseFromFile(toOpen: File, out: OutputStream) {
-        val mimeType = Files.probeContentType(toOpen.toPath())
+        val mimeType = Files.probeContentType(toOpen.toPath()).orEmpty()
 
         var response = createHeader(toOpen.length(), 200, mimeType)
         out.write(response.toByteArray())
         FileInputStream(toOpen).use { inputStream ->
-            out.write(inputStream.readBytes())
+            val fileBytes = inputStream.readBytes()
+            sendLogMessage("To ${address.toString()}: Sended ${response.length + fileBytes.size} bytes")
+            out.write(fileBytes)
         }
     }
 

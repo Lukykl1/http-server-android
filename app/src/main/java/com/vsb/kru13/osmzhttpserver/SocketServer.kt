@@ -1,26 +1,25 @@
 package com.vsb.kru13.osmzhttpserver
 
 import android.os.Build
-import android.os.Environment
+import android.os.Handler
 import android.util.Log
-
 import androidx.annotation.RequiresApi
-import java.io.*
-
+import java.io.IOException
 import java.net.ServerSocket
-import java.nio.file.Files
-import java.util.regex.Pattern
-import kotlinx.coroutines.*
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
-class SocketServer : Thread() {
+class SocketServer(val handler: Handler) : Thread() {
 
     internal var serverSocket: ServerSocket? = null
     val port = 12345
     internal var bRunning: Boolean = false
 
+    var executorService: ExecutorService = Executors.newCachedThreadPool()
+
     fun close() {
         try {
-            serverSocket!!.close()
+            serverSocket?.close()
         } catch (e: IOException) {
             Log.d("SERVER", "Error, probably interrupted in accept(), see log")
             e.printStackTrace()
@@ -44,8 +43,7 @@ class SocketServer : Thread() {
                 }
                 */
                 Log.d("SERVER", "Socket Waiting for connection")
-                val thread = Thread(HttpThread(s))
-                thread.run()
+                executorService.execute(HttpThread(s, handler))
                 Log.d("SERVER", "Socket Closed")
             }
         } catch (e: IOException) {
