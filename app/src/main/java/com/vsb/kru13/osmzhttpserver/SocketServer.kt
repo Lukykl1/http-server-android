@@ -1,5 +1,7 @@
 package com.vsb.kru13.osmzhttpserver
 
+import android.content.Context
+import android.hardware.Camera
 import android.os.Build
 import android.os.Handler
 import android.util.Log
@@ -8,14 +10,17 @@ import java.io.IOException
 import java.net.ServerSocket
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.Semaphore
 
-class SocketServer(val handler: Handler) : Thread() {
+class SocketServer(val handler: Handler, val maxThreads: Int, private val context: Context, private val camera: Camera) : Thread() {
 
+    private val cameraServer: CameraServer = CameraServer(context, camera)
     internal var serverSocket: ServerSocket? = null
     val port = 12345
     internal var bRunning: Boolean = false
 
     var executorService: ExecutorService = Executors.newCachedThreadPool()
+    val semaphore = Semaphore(this.maxThreads)
 
     fun close() {
         try {
@@ -43,7 +48,7 @@ class SocketServer(val handler: Handler) : Thread() {
                 }
                 */
                 Log.d("SERVER", "Socket Waiting for connection")
-                executorService.execute(HttpThread(s, handler))
+                executorService.execute(HttpThread(s, handler, semaphore, this.cameraServer))
                 Log.d("SERVER", "Socket Closed")
             }
         } catch (e: IOException) {

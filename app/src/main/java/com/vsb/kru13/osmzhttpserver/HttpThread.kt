@@ -8,56 +8,79 @@ import java.io.*
 import java.net.InetAddress
 import java.net.Socket
 import java.nio.file.Files
+import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.Semaphore
 import java.util.regex.Pattern
 
 
-class HttpThread(val socket: Socket, val handler: Handler) : Runnable {
+class HttpThread(private val socket: Socket, private val handler: Handler, private val semaphore: Semaphore, private var cameraServer: CameraServer) : Runnable {
     public companion object {
         public const val LOG_KEY = "LOG"
     }
+
     private var address: InetAddress? = null
     public override fun run() {
+        val available = semaphore.tryAcquire()
+        var close = true
         try {
             this.address = socket.inetAddress
-            sendLogMessage("Client ${address} connected")
+            sendLogMessage("Client ${address} connected. Remaining free threads ${semaphore.availablePermits()}")
             val out = socket.getOutputStream()
-            val bufferedReader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            if (!available) {
+                response503(out)
+                sendLogMessage("Client ${address} was not served. Server is busy")
+            } else {
+                val bufferedReader = BufferedReader(InputStreamReader(socket.getInputStream()))
 
-            val path: String? = proccessRequest(bufferedReader)
-            if (path == null) {
-                socket.close()
-                return
+                val path: String? = proccessRequest(bufferedReader)
+                if (path == null) {
+                    socket.close()
+                    return
+                }
+                sendLogMessage("Client ${address} Path ${path} requested")
+                close = createResponseForPath(path, out, socket)
             }
-            sendLogMessage("Client ${address} Path ${path} requested")
-            createResponseForPath(path, out)
-            out.flush()
-            sendLogMessage("Client ${address} closed")
+            if (close) {
+                out.flush()
+            }
+            sendLogMessage("Client ${address} closed. Remaining free threads ${if (!available) 0 else semaphore.availablePermits() + 1}")
         } finally {
-            socket.close()
+            if (close) {
+                if (available) {
+                    semaphore.release()
+                }
+                socket.close()
+            }
         }
     }
 
-    private fun createResponseForPath(path: String, out: OutputStream) {
+    private fun createResponseForPath(path: String, out: OutputStream, socket: Socket): Boolean {
         val baseDir = Environment.getExternalStorageDirectory().absolutePath
         val pathFile = baseDir + path
 
-        val toOpen = File(pathFile)
-        if (toOpen.exists()) {
-            if (toOpen.isFile) {
-                responseFromFile(toOpen, out)
-            } else {
-                val files = toOpen.listFiles()!!
-                val index = files.firstOrNull { it.nameWithoutExtension == "index" }
-                if (index != null) {
-                    responseFromFile(index, out)
-                } else {
-                    responseListing(files, out)
-                }
-            }
+        if (path == "/camera/stream") {
+            this.cameraServer.addSocket(out, socket);
+            return false
         } else {
-            response404(out)
+            val toOpen = File(pathFile)
+            if (toOpen.exists()) {
+                if (toOpen.isFile) {
+                    responseFromFile(toOpen, out)
+                } else {
+                    val files = toOpen.listFiles()!!
+                    val index = files.firstOrNull { it.nameWithoutExtension == "index" }
+                    if (index != null) {
+                        responseFromFile(index, out)
+                    } else {
+                        responseListing(files, out)
+                    }
+                }
+            } else {
+                response404(out)
+            }
         }
+        return true
     }
 
     private fun proccessRequest(bufferedReader: BufferedReader): String? {
@@ -86,7 +109,7 @@ class HttpThread(val socket: Socket, val handler: Handler) : Runnable {
         val name = { file: File -> "${if (file.isDirectory) "Dir:" else "File:"} ${file.name}" }
 
         val items = files.map {
-            "<li><a href = ${href(it)}>" + name(it) +
+            "<li><a href = ${href(it)}>" + name(it) + "<span style=\"margin-left:15%\">${Date(it.lastModified())}</span>" +
                     "</a></li>"
         }.joinToString("\n")
 
@@ -106,9 +129,22 @@ class HttpThread(val socket: Socket, val handler: Handler) : Runnable {
         val currentTime: Date = Calendar.getInstance().time
         val msg = handler.obtainMessage()
         val bundle = Bundle()
-        bundle.putString(LOG_KEY, "$currentTime: $response")
+        val formatter = SimpleDateFormat("HH:mm:ss")
+        var formattedDate = formatter.format(currentTime)
+        bundle.putString(LOG_KEY, "$formattedDate: $response")
         msg.data = bundle
         handler.sendMessage(msg)
+    }
+
+    private fun response503(out: OutputStream) {
+        val body = "<html>\n" +
+                "<body>\n" +
+                "<h1>Server too busy!</h1>\n" +
+                "</body>\n" +
+                "</html>"
+        val response = createHeader(body.length.toLong(), 503) + body
+        sendLogMessage("To ${address.toString()}: Sended ${response.toByteArray().size} bytes")
+        out.write(response.toByteArray())
     }
 
     private fun response404(out: OutputStream) {
