@@ -2,15 +2,13 @@
 
 package com.vsb.kru13.osmzhttpserver
 
+import android.R.attr
 import android.content.Context
 import android.content.Context.MODE_PRIVATE
-import android.graphics.SurfaceTexture
+import android.graphics.*
 import android.hardware.Camera
 import android.hardware.Camera.PictureCallback
-import android.util.Log
-import android.view.SurfaceHolder
-import android.view.SurfaceView
-import kotlinx.coroutines.sync.Semaphore
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -26,50 +24,81 @@ data class SocketHolder(
         val inputStream: InputStream)
 
 class CameraServer(context: Context, private val camera: Camera) {
+    private val byTakePicture: Boolean = false
     private var timer: Timer? = null
     private val sockets: ArrayList<SocketHolder> = ArrayList()
     private val surfaceTexture = SurfaceTexture(MODE_PRIVATE)
-    private var thread: Thread
+    private var thread: Thread? = null
     private val safeShootSemaphore = java.util.concurrent.Semaphore(1)
 
     private val picture = PictureCallback { data, _ ->
         thread {
-            val socketsToRemove = ArrayList<SocketHolder>()
-            synchronized(this) {
-                for (holder in sockets) {
-                    try {
-                        holder.outputStream.write("--frame\n".toByteArray())
-                        holder.outputStream.write(
-                                "Content-Type: image/jpeg\n\n".toByteArray())
-                        holder.outputStream.write(data)
-                        holder.outputStream.flush()
-                    } catch (ex: IOException) {
-                        socketsToRemove.add(holder)
-                    }
-                }
-                for (holder in socketsToRemove) {
-                    holder.socket.close()
-                    holder.outputStream.close()
-                    holder.inputStream.close()
-                }
-                sockets.removeAll(socketsToRemove)
-            }
+            sendPhoto(data)
             safeShootSemaphore.release()
+        }
+    }
+    private val picturePreviewCallback = Camera.PreviewCallback { data, _ ->
+        thread {
+            if (safeShootSemaphore.tryAcquire()) { //against concurent previews
+                val parameters = camera.parameters
+                val width = parameters.previewSize.width
+                val height = parameters.previewSize.height
+
+                val yuv = YuvImage(data, parameters.previewFormat, width, height, null)
+
+                val out = ByteArrayOutputStream()
+                yuv.compressToJpeg(Rect(0, 0, width, height), 90, out)
+
+                val bytes: ByteArray = out.toByteArray()
+                sendPhoto(bytes)
+                safeShootSemaphore.release()
+            }
+        }
+    }
+
+    private fun sendPhoto(data: ByteArray?) {
+        val socketsToRemove = ArrayList<SocketHolder>()
+        synchronized(this) {
+            //adding new socket to list
+            for (holder in sockets) {
+                try {
+                    holder.outputStream.write("--frame\n".toByteArray())
+                    holder.outputStream.write(
+                            "Content-Type: image/jpeg\n\n".toByteArray())
+                    holder.outputStream.write(data)
+                    holder.outputStream.flush()
+                } catch (ex: IOException) {
+                    socketsToRemove.add(holder)
+                }
+            }
+            for (holder in socketsToRemove) {
+                holder.socket.close()
+                holder.outputStream.close()
+                holder.inputStream.close()
+            }
+            sockets.removeAll(socketsToRemove)
         }
     }
 
     init {
+       // camera.parameters.previewFormat = PixelFormat.JPEG not working
         camera.setPreviewTexture(surfaceTexture)
-        this.thread = thread {
-            while (true) {
-                safeShootSemaphore.acquire()
-                camera.startPreview()
-                Thread.sleep(600)
-                camera.takePicture(null, null, picture)
-                Thread.sleep(600)
+        if (this.byTakePicture) {
+            this.thread = thread {
+                while (true) {
+                    safeShootSemaphore.acquire()
+                    camera.startPreview()
+                    Thread.sleep(600)
+                    camera.takePicture(null, null, picture)
+                    Thread.sleep(600)
+                }
             }
-
+        } else {
+            camera.startPreview()
+            Thread.sleep(600)
+            camera.setPreviewCallback(picturePreviewCallback)
         }
+
 
     }
 
