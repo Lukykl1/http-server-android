@@ -7,10 +7,12 @@ import android.util.Log
 import java.io.*
 import java.net.InetAddress
 import java.net.Socket
+import java.net.URLDecoder
 import java.nio.file.Files
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 
@@ -58,8 +60,9 @@ class HttpThread(private val socket: Socket, private val handler: Handler, priva
     private fun createResponseForPath(path: String, out: OutputStream, socket: Socket): Boolean {
         val baseDir = Environment.getExternalStorageDirectory().absolutePath
         val pathFile = baseDir + path
-
-        if (path == "/camera/stream") {
+        if (path.startsWith("/cgi-bin")) {
+            this.responseFromCgi(path, out)
+        } else if (path == "/camera/stream") {
             this.cameraServer.addSocket(out, socket);
             return false
         } else {
@@ -81,6 +84,29 @@ class HttpThread(private val socket: Socket, private val handler: Handler, priva
             }
         }
         return true
+    }
+
+    private fun responseFromCgi(path: String, out: OutputStream) {
+        var params = path.split("/").map { URLDecoder.decode(it, "UTF-8"); }.drop(2)
+
+        val pb = ProcessBuilder(params)
+        try {
+            pb.redirectErrorStream(true)
+            val process = pb.start()
+            var body = ""
+            process.inputStream.reader(Charsets.UTF_8).use {
+                body += it.readText()
+            }
+            process.waitFor(10, TimeUnit.SECONDS)
+            val response = createHeader(body.length.toLong(), 404) + body
+            out.write(response.toByteArray())
+            out.flush()
+        } catch (ex : Exception) {
+            val body = "Error in command: ${params.joinToString(",")} \n ${ex.localizedMessage}";
+            val response = createHeader(body.length.toLong(), 500) + body
+            out.write(response.toByteArray())
+            out.flush()
+        }
     }
 
     private fun proccessRequest(bufferedReader: BufferedReader): String? {
