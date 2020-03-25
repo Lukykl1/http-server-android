@@ -4,6 +4,7 @@ import android.content.Context
 import android.hardware.Camera
 import android.os.Build
 import android.os.Handler
+import android.os.Messenger
 import android.util.Log
 import androidx.annotation.RequiresApi
 import java.io.IOException
@@ -12,9 +13,9 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Semaphore
 
-class SocketServer(val handler: Handler, val maxThreads: Int, private val context: Context, private val camera: Camera) : Thread() {
+class SocketServer(val messenger: Messenger, val maxThreads: Int, camera: Camera) : Thread() {
 
-    private val cameraServer: CameraServer = CameraServer(context, camera)
+    private val cameraServer: CameraServer = CameraServer(camera)
     internal var serverSocket: ServerSocket? = null
     val port = 12345
     internal var bRunning: Boolean = false
@@ -48,7 +49,7 @@ class SocketServer(val handler: Handler, val maxThreads: Int, private val contex
                 }
                 */
                 Log.d("SERVER", "Socket Waiting for connection")
-                executorService.execute(HttpThread(s, handler, semaphore, this.cameraServer))
+                executorService.execute(HttpThread(s, messenger, semaphore, this.cameraServer))
                 Log.d("SERVER", "Socket Closed")
             }
         } catch (e: IOException) {

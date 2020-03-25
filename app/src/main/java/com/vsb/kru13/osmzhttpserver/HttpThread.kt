@@ -1,8 +1,6 @@
 package com.vsb.kru13.osmzhttpserver
 
-import android.os.Bundle
-import android.os.Environment
-import android.os.Handler
+import android.os.*
 import android.util.Log
 import java.io.*
 import java.net.InetAddress
@@ -16,7 +14,7 @@ import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 
-class HttpThread(private val socket: Socket, private val handler: Handler, private val semaphore: Semaphore, private var cameraServer: CameraServer) : Runnable {
+class HttpThread(private val socket: Socket, private val messenger: Messenger, private val semaphore: Semaphore, private var cameraServer: CameraServer) : Runnable {
     public companion object {
         public const val LOG_KEY = "LOG"
     }
@@ -153,13 +151,13 @@ class HttpThread(private val socket: Socket, private val handler: Handler, priva
 
     private fun sendLogMessage(response: String) {
         val currentTime: Date = Calendar.getInstance().time
-        val msg = handler.obtainMessage()
+        val msg = Message.obtain()
         val bundle = Bundle()
         val formatter = SimpleDateFormat("HH:mm:ss")
         var formattedDate = formatter.format(currentTime)
         bundle.putString(LOG_KEY, "$formattedDate: $response")
         msg.data = bundle
-        handler.sendMessage(msg)
+        messenger.send(msg)
     }
 
     private fun response503(out: OutputStream) {

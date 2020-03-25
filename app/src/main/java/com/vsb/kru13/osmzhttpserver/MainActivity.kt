@@ -1,7 +1,11 @@
 package com.vsb.kru13.osmzhttpserver
 
 import android.Manifest
+import android.app.ActivityManager
+import android.app.Notification
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.Camera
 import android.hardware.camera2.CameraAccessException
@@ -33,7 +37,7 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
     private var started = false
 
     private companion object {
-        private const val READ_EXTERNAL_STORAGE_PLUS_CAMERA = 1
+        private const val READ_EXTERNAL_STORAGE_PLUS_CAMERA_PLUS_SERVICE = 1
     }
 
     private val handler: Handler = object : Handler(Looper.getMainLooper()) {
@@ -46,6 +50,7 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
         }
     }
 
+    private val messenger: Messenger = Messenger(handler)
     fun getLocalIpAddress(): Array<String?>? {
         val addresses = ArrayList<String>()
         try {
@@ -73,6 +78,14 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
         val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         val ipAddress: String = Formatter.formatIpAddress(wifiManager.connectionInfo.ipAddress)
         ipView.setText("Wifi IP Address: $ipAddress \nOther IP adresses: ${getLocalIpAddress()?.joinToString(",\n")}}")
+
+        val manager: ActivityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        for (service in manager.getRunningServices(Integer.MAX_VALUE)) {
+            if ("com.vsb.kru13.osmzhttpserver.ServerIntentService".equals(service.service.getClassName())) {
+                stopService(Intent(this, ServerIntentService::class.java))
+                start()
+            }
+        }
     }
 
 
@@ -85,9 +98,11 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
         backgroundThread = HandlerThread("CameraBackground").also { it.start() }
         backgroundHandler = Handler(backgroundThread?.looper)
     }
+
     private fun checkCameraHardware(context: Context): Boolean {
         return context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
     }
+
     fun getCameraInstance(): Camera? {
         return try {
             Camera.open() // attempt to get a Camera instance
@@ -96,45 +111,53 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
             null // returns null if camera is unavailable
         }
     }
+
     override fun onClick(v: View) {
         if (v.id == R.id.button1) {
             val permissionCheck = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
             val permissionCameraCheck = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            if (permissionCheck != PackageManager.PERMISSION_GRANTED || permissionCameraCheck != PackageManager.PERMISSION_GRANTED) {
+            val permissionServiceCheck = ContextCompat.checkSelfPermission(this, Manifest.permission.FOREGROUND_SERVICE)
+            if (permissionCheck != PackageManager.PERMISSION_GRANTED ||
+                    permissionCameraCheck != PackageManager.PERMISSION_GRANTED ||
+                    permissionServiceCheck != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(
-                        this, arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.CAMERA), READ_EXTERNAL_STORAGE_PLUS_CAMERA)
+                        this, arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.CAMERA, Manifest.permission.FOREGROUND_SERVICE), READ_EXTERNAL_STORAGE_PLUS_CAMERA_PLUS_SERVICE)
             } else {
-                val btn = v as Button
-                btn.text = "Started"
                 if (!started) {
-                    started = true
-                    maxThreadsView.inputType = 0
-                    val stringThreads = maxThreadsView.text.toString()
-                    s = SocketServer(handler, stringThreads.toIntOrNull() ?: 5, this.applicationContext, getCameraInstance()!!)
-                    s!!.start()
+                    start()
                 }
             }
         }
         if (v.id == R.id.button2) {
-            s?.close()
-            try {
-                s?.join()
-            } catch (e: InterruptedException) {
-                e.printStackTrace()
-            }
+            stopService(Intent(this, ServerIntentService::class.java))
+            started = false
             button1.text = "STAR HTTP SERVER"
             maxThreadsView.inputType = InputType.TYPE_CLASS_NUMBER
         }
     }
 
+    private fun start() {
+        button1.text = "Started"
+        started = true
+        maxThreadsView.inputType = 0
+        val stringThreads = maxThreadsView.text.toString()
+        Intent(this, ServerIntentService::class.java).also { intent ->
+            intent.putExtra("stringThreads", stringThreads)
+            intent.putExtra("messenger", messenger)
+            startService(intent)
+        }
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         when (requestCode) {
-            READ_EXTERNAL_STORAGE_PLUS_CAMERA -> if (grantResults.size > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            READ_EXTERNAL_STORAGE_PLUS_CAMERA_PLUS_SERVICE -> if (grantResults.size > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 button1.text = "Started"
                 started = true
                 val stringThreads = maxThreadsView.text.toString()
-                s = SocketServer(handler, stringThreads.toIntOrNull() ?: 5, this.applicationContext, getCameraInstance()!!)
-                s!!.start()
+                Intent(this, ServerIntentService::class.java).also { intent ->
+                    intent.putExtra("stringThreads", stringThreads)
+                    startService(intent)
+                }
             }
             else -> {
             }

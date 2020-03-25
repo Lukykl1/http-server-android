@@ -23,9 +23,8 @@ data class SocketHolder(
         val outputStream: OutputStream,
         val inputStream: InputStream)
 
-class CameraServer(context: Context, private val camera: Camera) {
+class CameraServer(private val camera: Camera) {
     private val byTakePicture: Boolean = false
-    private var timer: Timer? = null
     private val sockets: ArrayList<SocketHolder> = ArrayList()
     private val surfaceTexture = SurfaceTexture(MODE_PRIVATE)
     private var thread: Thread? = null
@@ -83,6 +82,8 @@ class CameraServer(context: Context, private val camera: Camera) {
     init {
        // camera.parameters.previewFormat = PixelFormat.JPEG not working
         camera.setPreviewTexture(surfaceTexture)
+        Thread.sleep(600)
+        Thread.sleep(600)
         if (this.byTakePicture) {
             this.thread = thread {
                 while (true) {
