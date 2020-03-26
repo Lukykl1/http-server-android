@@ -33,7 +33,6 @@ import kotlin.collections.ArrayList
 
 
 class MainActivity : AppCompatActivity(), View.OnClickListener {
-    private var s: SocketServer? = null
     private var started = false
 
     private companion object {
@@ -84,30 +83,6 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
             if ("com.vsb.kru13.osmzhttpserver.ServerIntentService".equals(service.service.getClassName())) {
                 start()
             }
-        }
-    }
-
-
-    private var cameraDevice: CameraDevice? = null
-    private lateinit var cameraId: String
-    private val cameraOpenCloseLock = Semaphore(1)
-    private var backgroundThread: HandlerThread? = null
-    private var backgroundHandler: Handler? = null
-    private fun startBackgroundThread() {
-        backgroundThread = HandlerThread("CameraBackground").also { it.start() }
-        backgroundHandler = Handler(backgroundThread?.looper)
-    }
-
-    private fun checkCameraHardware(context: Context): Boolean {
-        return context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
-    }
-
-    fun getCameraInstance(): Camera? {
-        return try {
-            Camera.open() // attempt to get a Camera instance
-        } catch (e: Exception) {
-            // Camera is not available (in use or does not exist)
-            null // returns null if camera is unavailable
         }
     }
 
