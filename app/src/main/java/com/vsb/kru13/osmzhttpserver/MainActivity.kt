@@ -82,7 +82,6 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
         val manager: ActivityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         for (service in manager.getRunningServices(Integer.MAX_VALUE)) {
             if ("com.vsb.kru13.osmzhttpserver.ServerIntentService".equals(service.service.getClassName())) {
-                stopService(Intent(this, ServerIntentService::class.java))
                 start()
             }
         }
