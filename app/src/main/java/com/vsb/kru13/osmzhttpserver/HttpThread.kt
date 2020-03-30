@@ -86,7 +86,6 @@ class HttpThread(private val socket: Socket, private val messenger: Messenger, p
 
     private fun responseFromCgi(path: String, out: OutputStream) {
         var params = path.split("/").map { URLDecoder.decode(it, "UTF-8"); }.drop(2)
-
         val pb = ProcessBuilder(params)
         try {
             pb.redirectErrorStream(true)

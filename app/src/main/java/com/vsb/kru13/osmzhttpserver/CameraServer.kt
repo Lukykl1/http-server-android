@@ -99,8 +99,6 @@ class CameraServer(private val camera: Camera) {
             Thread.sleep(600)
             camera.setPreviewCallback(picturePreviewCallback)
         }
-
-
     }
 
     fun addSocket(out: OutputStream, socket: Socket) {

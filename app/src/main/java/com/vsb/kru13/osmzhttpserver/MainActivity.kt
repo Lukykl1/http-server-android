@@ -20,11 +20,13 @@ import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import kotlinx.android.synthetic.main.activity_main.*
 import java.net.NetworkInterface
+import java.net.ServerSocket
 import java.net.SocketException
 import java.util.*
 import java.util.concurrent.Semaphore
@@ -33,6 +35,7 @@ import kotlin.collections.ArrayList
 
 
 class MainActivity : AppCompatActivity(), View.OnClickListener {
+    private var server: SocketServer? = null
     private var started = false
 
     private companion object {
@@ -81,13 +84,13 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
         val manager: ActivityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         for (service in manager.getRunningServices(Integer.MAX_VALUE)) {
             if ("com.vsb.kru13.osmzhttpserver.ServerIntentService".equals(service.service.getClassName())) {
-                start()
+                startService()
             }
         }
     }
 
     override fun onClick(v: View) {
-        if (v.id == R.id.button1) {
+        if (v.id == R.id.button1)  {
             val permissionCheck = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
             val permissionCameraCheck = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             val permissionServiceCheck = ContextCompat.checkSelfPermission(this, Manifest.permission.FOREGROUND_SERVICE)
@@ -98,7 +101,11 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
                         this, arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.CAMERA, Manifest.permission.FOREGROUND_SERVICE), READ_EXTERNAL_STORAGE_PLUS_CAMERA_PLUS_SERVICE)
             } else {
                 if (!started) {
-                    start()
+                    if(serviceSwitch.isChecked){
+                        startService()
+                    }else{
+                        start()
+                    }
                 }
             }
         }
@@ -107,14 +114,33 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
             started = false
             button1.text = "STAR HTTP SERVER"
             maxThreadsView.inputType = InputType.TYPE_CLASS_NUMBER
+            serviceSwitch.isEnabled = true
         }
     }
 
     private fun start() {
-        button1.text = "Started"
+        button1.text = "Started in activity"
         started = true
         maxThreadsView.inputType = 0
+        serviceSwitch.isEnabled = false
+        serviceSwitch.isChecked = false
         val stringThreads = maxThreadsView.text.toString()
+
+
+        this.server = SocketServer(messenger, stringThreads.toIntOrNull() ?: 5, getCameraInstance()!!)
+        this.server!!.start()
+    }
+    private fun startService() {
+        button1.text = "Started as service"
+        started = true
+        maxThreadsView.inputType = 0
+        serviceSwitch.isEnabled = false
+        serviceSwitch.isChecked = true
+        val stringThreads = maxThreadsView.text.toString()
+
+        val t = Toast.makeText(this@MainActivity,  "In service there's a bug with camera. For camera use server in activity.", Toast.LENGTH_LONG)
+        t.show()
+
         Intent(this, ServerIntentService::class.java).also { intent ->
             intent.putExtra("stringThreads", stringThreads)
             intent.putExtra("messenger", messenger)
@@ -135,6 +161,14 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
             }
             else -> {
             }
+        }
+    }
+    fun getCameraInstance(): Camera? {
+        return try {
+            Camera.open() // attempt to get a Camera instance
+        } catch (e: Exception) {
+            // Camera is not available (in use or does not exist)
+            null // returns null if camera is unavailable
         }
     }
 }

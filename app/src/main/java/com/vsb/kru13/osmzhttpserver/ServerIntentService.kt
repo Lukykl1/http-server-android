@@ -18,6 +18,7 @@ class ServerIntentService : IntentService("ServerIntentService") {
     private val ONGOING_NOTIFICATION_ID = 1337
     private var s: SocketServer? = null
     private var running = false;
+
     fun getCameraInstance(): Camera? {
         return try {
             Camera.open() // attempt to get a Camera instance
