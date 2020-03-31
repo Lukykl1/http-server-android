@@ -33,7 +33,7 @@ class HttpThread(private val socket: Socket, private val messenger: Messenger, p
             } else {
                 val bufferedReader = BufferedReader(InputStreamReader(socket.getInputStream()))
 
-                val path: String? = proccessRequest(bufferedReader)
+                val path: String? = processRequest(bufferedReader)
                 if (path == null) {
                     socket.close()
                     return
@@ -43,13 +43,13 @@ class HttpThread(private val socket: Socket, private val messenger: Messenger, p
             }
             if (close) {
                 out.flush()
+                sendLogMessage("Client ${address} closed. Remaining free threads ${if (!available) 0 else semaphore.availablePermits() + 1}")
             }
-            sendLogMessage("Client ${address} closed. Remaining free threads ${if (!available) 0 else semaphore.availablePermits() + 1}")
         } finally {
+            if (available) {
+                semaphore.release()
+            }
             if (close) {
-                if (available) {
-                    semaphore.release()
-                }
                 socket.close()
             }
         }
@@ -60,8 +60,10 @@ class HttpThread(private val socket: Socket, private val messenger: Messenger, p
         val pathFile = baseDir + path
         if (path.startsWith("/cgi-bin")) {
             this.responseFromCgi(path, out)
+            sendLogMessage("Client ${address} executed command")
         } else if (path == "/camera/stream") {
             this.cameraServer.addSocket(out, socket);
+            sendLogMessage("Client ${address} added to camera streaming")
             return false
         } else {
             val toOpen = File(pathFile)
@@ -100,13 +102,14 @@ class HttpThread(private val socket: Socket, private val messenger: Messenger, p
             out.flush()
         } catch (ex : Exception) {
             val body = "Error in command: ${params.joinToString(",")} \n ${ex.localizedMessage}";
+            sendLogMessage("Client ${address} error in cgi : " + body)
             val response = createHeader(body.length.toLong(), 500) + body
             out.write(response.toByteArray())
             out.flush()
         }
     }
 
-    private fun proccessRequest(bufferedReader: BufferedReader): String? {
+    private fun processRequest(bufferedReader: BufferedReader): String? {
         var line = bufferedReader.readLine()
         if (line == "" || line == null) {
             return null
