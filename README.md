@@ -9,7 +9,11 @@ Can restrict max threads for http requests
 Supports:
 
 /camera/stream for camera streaming (by preview but switchable in code)
+
 /cgi-bin for user commands
+
 images,
+
 html pages,
+
 directory listings...
